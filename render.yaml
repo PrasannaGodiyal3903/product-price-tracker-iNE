@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: product-price-tracker-backend
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install --prefix backend && npm run build --prefix backend && npx playwright install --with-deps chromium
+    startCommand: npm start --prefix backend
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: CRON_SECRET
+        generateValue: true
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
