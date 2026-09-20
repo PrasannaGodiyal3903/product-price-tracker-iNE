@@ -6,8 +6,8 @@ The application allows users to search products from the INE Mock Store, track s
 
 ## Live Application
 
-- **Frontend:** Deployed on Vercel
-- **Backend:** Deployed on Render
+- **Frontend:** https://product-price-tracker-ine-frontend.vercel.app (Deployed on Vercel)
+- **Backend:** https://product-price-tracker-ine-backend.onrender.com (Deployed on Render)
 - **Database:** Supabase PostgreSQL
 - **Scheduled Scraping:** cron-job.org
 
