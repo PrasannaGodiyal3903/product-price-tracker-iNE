@@ -810,6 +810,16 @@
     "product_url": "https://demo.inelabteamdev.com/product/82"
   },
   {
+    "id": 83,
+    "slug": "copperpot-speaker-mini",
+    "name": "Copperpot Speaker Mini",
+    "brand": "Copperpot",
+    "category": "Audio",
+    "sku": "COP-10083",
+    "description": "The Copperpot Speaker Mini. A dependable audio pick with a clean, no-nonsense design and the everyday features you actually use.",
+    "product_url": "https://demo.inelabteamdev.com/product/83"
+  },
+  {
     "id": 84,
     "slug": "summit-soundbar-mini",
     "name": "Summit Soundbar Mini",
@@ -5550,6 +5560,16 @@
     "product_url": "https://demo.inelabteamdev.com/product/559"
   },
   {
+    "id": 560,
+    "slug": "summit-cross-trainer-two",
+    "name": "Summit Cross Trainer Two",
+    "brand": "Summit",
+    "category": "Footwear",
+    "sku": "SUM-10560",
+    "description": "The Summit Cross Trainer Two. A dependable footwear pick with a clean, no-nonsense design and the everyday features you actually use.",
+    "product_url": "https://demo.inelabteamdev.com/product/560"
+  },
+  {
     "id": 561,
     "slug": "nordkraft-headphones-three",
     "name": "Nordkraft Headphones Three",
@@ -6518,6 +6538,16 @@
     "sku": "COP-10657",
     "description": "The Copperpot Smartwatch S. A dependable wearables pick with a clean, no-nonsense design and the everyday features you actually use.",
     "product_url": "https://demo.inelabteamdev.com/product/657"
+  },
+  {
+    "id": 658,
+    "slug": "summit-fitness-band-s",
+    "name": "Summit Fitness Band S",
+    "brand": "Summit",
+    "category": "Wearables",
+    "sku": "SUM-10658",
+    "description": "The Summit Fitness Band S. A dependable wearables pick with a clean, no-nonsense design and the everyday features you actually use.",
+    "product_url": "https://demo.inelabteamdev.com/product/658"
   },
   {
     "id": 659,

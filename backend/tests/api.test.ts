@@ -7,6 +7,7 @@ vi.mock('../src/db/supabase', () => ({
 }));
 
 import { app } from '../src/server';
+import { ScraperController } from '../src/controllers/scraperController';
 
 describe('API Integration Tests', () => {
   let server: http.Server;
@@ -75,18 +76,57 @@ describe('API Integration Tests', () => {
     expect(data.error).toBe('INVALID_STORE_URL');
   });
 
-  it('POST /api/scraper/run should require CRON_SECRET authentication', async () => {
+  it('POST /api/scraper/run should require CRON_SECRET authentication (401 on missing/invalid)', async () => {
     const unauth = await fetch(`${baseUrl}/api/scraper/run`, { method: 'POST' });
     expect(unauth.status).toBe(401);
+    const unauthData = await unauth.json();
+    expect(unauthData.error).toBe('UNAUTHORIZED');
 
+    const badSecret = await fetch(`${baseUrl}/api/scraper/run`, {
+      method: 'POST',
+      headers: { 'x-cron-secret': 'wrong-secret-value' }
+    });
+    expect(badSecret.status).toBe(401);
+  });
+
+  it('POST /api/scraper/run should immediately return 202 Accepted with valid secret', async () => {
+    // Ensure clean initial state
+    ScraperController.setScraperActive(false);
+
+    const startTime = Date.now();
     const auth = await fetch(`${baseUrl}/api/scraper/run`, {
       method: 'POST',
       headers: {
         'x-cron-secret': process.env.CRON_SECRET || 'cron-secret-ine-2026'
       }
     });
-    expect(auth.status).toBe(200);
+    const elapsedMs = Date.now() - startTime;
+
+    expect(auth.status).toBe(202);
     const data = await auth.json();
     expect(data.success).toBe(true);
-  }, 15000);
+    expect(data.message).toBe('Scraper run started');
+    // Verify response was sent immediately (well under 1 second)
+    expect(elapsedMs).toBeLessThan(1000);
+  });
+
+  it('POST /api/scraper/run should return 409 Conflict if a scraper run is already in progress', async () => {
+    // Simulate active scraper run
+    ScraperController.setScraperActive(true);
+
+    const conflict = await fetch(`${baseUrl}/api/scraper/run`, {
+      method: 'POST',
+      headers: {
+        'x-cron-secret': process.env.CRON_SECRET || 'cron-secret-ine-2026'
+      }
+    });
+
+    expect(conflict.status).toBe(409);
+    const data = await conflict.json();
+    expect(data.success).toBe(false);
+    expect(data.message).toBe('Scraper run already in progress');
+
+    // Reset state after test
+    ScraperController.setScraperActive(false);
+  });
 });
