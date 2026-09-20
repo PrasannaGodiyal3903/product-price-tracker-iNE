@@ -5,6 +5,7 @@ import http from 'http';
 import { productRouter } from './routes/productRoutes';
 import { scraperRouter } from './routes/scraperRoutes';
 import { errorHandler } from './middleware/errorHandler';
+import { CatalogService } from './services/catalogService';
 
 dotenv.config();
 
@@ -70,7 +71,11 @@ export function stopServer(): Promise<void> {
 
 // Only listen if not imported in test mode
 if (process.env.NODE_ENV !== 'test' && !process.env.E2E_TEST) {
-  startServer();
+  startServer().then(() => {
+    CatalogService.getAllProducts().catch(err => {
+      console.warn('[Server] Initial catalog pre-warm note:', err.message);
+    });
+  });
 }
 
 export default app;

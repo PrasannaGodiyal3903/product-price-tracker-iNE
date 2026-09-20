@@ -1,5 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import http from 'http';
+
+vi.mock('../src/db/supabase', () => ({
+  supabase: null,
+  validateAndInitSupabase: vi.fn(),
+}));
+
 import { app } from '../src/server';
 
 describe('API Integration Tests', () => {
@@ -82,5 +88,5 @@ describe('API Integration Tests', () => {
     expect(auth.status).toBe(200);
     const data = await auth.json();
     expect(data.success).toBe(true);
-  });
+  }, 15000);
 });

@@ -17,14 +17,24 @@ export interface CatalogSearchResult {
   totalPages: number;
 }
 
-export async function searchCatalog(query: string, category = '', page = 1, pageSize = 30): Promise<CatalogSearchResult> {
+export async function searchCatalog(
+  query: string,
+  category = '',
+  page = 1,
+  pageSize = 40
+): Promise<CatalogSearchResult> {
   const params = new URLSearchParams();
-  if (query.trim()) params.set('q', query.trim());
-  if (category)     params.set('category', category);
+  const trimmed = query.trim();
+  if (trimmed) params.set('q', trimmed);
+  if (category && category !== 'all') params.set('category', category);
   params.set('page', String(page));
   params.set('limit', String(pageSize));
+
   const res = await fetch(API_BASE + '/api/products/search?' + params.toString());
-  if (!res.ok) throw new Error('Catalog search request failed');
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.message || 'Catalog search request failed (HTTP ' + res.status + ')');
+  }
   const data = await res.json();
   return {
     items: data.items || [],
