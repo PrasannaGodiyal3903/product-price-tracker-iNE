@@ -1,105 +1,50 @@
-# Design Note: Product Price Tracker (Web Scraping)
+# Design Note — Product Price Tracker
 
-## 1. Scraping Strategy: Why HTTP + Cheerio Was Not Sufficient
+## 1. Scraping Reliability
 
-During our initial technical inspection of the target storefront (`https://demo.inelabteamdev.com/`), we requested the raw page HTML to verify whether lightweight HTTP fetching + Cheerio HTML parsing was viable.
+The main priority of this implementation was reliable price and stock extraction rather than simply making a scraper that works once.
 
-Inspection of the response confirmed:
-1. **Client-Side Rendering (SPA)**: The server responds only with an empty root shell:
-   ```html
-   <!doctype html>
-   <html lang="en">
-     <body><div id="root"></div></body>
-   </html>
-   ```
-   The catalog, product layout, and pricing elements are dynamically mounted via React client bundles.
-2. **Interactive Proof-of-Work Challenge**: Prices are not embedded in static API responses. The application requires:
-   - Mouse movement tracking (`minMoves: 8`, `minDwellMs: 600ms`) over `.price-block`.
-   - Dynamic token generation via `/api/challenge` and `/api/session`.
-   - WebAssembly execution to solve a client-side cryptographic proof of work before an encrypted quote is returned by `/api/products/:id/price`.
-3. **Decoy Elements**: The mock store injects decoy elements to mislead naive scrapers:
-   - `span.price-value` with `style: { display: 'none' }` holding decoy value `d.d1`.
-   - `span.amount[data-price="true"]` with `style: { display: 'none' }` holding decoy value `d.d2` (`shown + 7`).
-   - The genuine price is rendered in a dynamically styled container that rotates CSS classes and tags across layout versions.
+The scraper uses Playwright with Chromium because the target store is client-rendered and requires browser interaction. The scraper validates the extracted data before storing it. In particular, hidden/decoy price elements are ignored by checking DOM visibility and computed styles, and only a valid visible price is accepted.
 
-Because of these explicit anti-bot and client-side dynamics, lightweight HTTP fetching + Cheerio is incapable of extracting the true price. A real browser execution environment is required.
+The scraper also handles common transient failures using bounded timeouts, up to three attempts, exponential backoff with jitter, and retry handling for browser/page errors and retryable HTTP responses such as 401/429. Cookie overlays and unreliable interactions are handled before extracting the final data.
+
+Every attempt is recorded in `scrape_logs` with its status, attempt number, duration, and error information. A `price_history` record is created only after a successful scrape produces a valid price. This prevents failed or invalid attempts from creating misleading historical data.
+
+The scheduled scraper is triggered externally through cron-job.org every two hours. The `/api/scraper/run` endpoint authenticates the cron request using `x-cron-secret`, starts the scraper asynchronously, and immediately returns `202 Accepted`. This prevents the scheduler from timing out while the browser is still scraping products.
 
 ---
 
-## 2. Headless Browser Decision: Why Playwright Was Required
+## 2. Trade-offs
 
-Playwright was chosen because it executes modern Chromium with full WebAssembly, WebGL, canvas fingerprinting, and trusted pointer event emulation:
-- **Interaction Emulation**: Playwright navigates, moves the virtual cursor across the price container bounding box with realistic intervals (> 50ms), satisfies dwell time, and clicks the reveal trigger.
-- **Overlay & Flakiness Handling**: The mock store randomly displays a cookie consent overlay (`.cookie-overlay`) after 1.5–5 seconds, which intercepts pointer events. Our Playwright integration proactively detects and dismisses this modal to prevent click timeouts.
-- **Dynamic Decoy Filtering**: Playwright inspects computed styles directly in the DOM, filtering out `display: none` decoys and strikethrough MRP spans to extract the genuine visible price.
+### Reliability vs. Speed
 
----
+Retries and backoff make scraping slower when failures occur, but they significantly reduce the chance of losing a scrape because of a temporary browser or network failure.
 
-## 3. Reliability Strategy: Handling Slow, Delayed, and Failing Requests
+### Browser Automation vs. Simple HTTP Requests
 
-To guarantee reliable scraping without hanging or crashing:
-1. **Explicit Timeouts**: All Playwright navigations and element waits enforce a strict 10–15 second timeout. No operation waits indefinitely.
-2. **Exponential Backoff with Jitter**:
-   - Initial delay: 1,500ms
-   - Multiplier: 2.0
-   - Random jitter: ±200ms
-   - Maximum retries: 3 attempts per scrape job
-3. **Internal Flakiness Recovery**: The mock store includes an intentional click-drop simulator (`Xn` function) and simulated 429 / 401 errors. If the store displays "Try again" or enters an error state, the scraper retries the action before escalating to job-level retry.
-4. **Selector Resilience**: Instead of brittle hierarchical paths (e.g. `div > div:nth-child(3)`), the scraper relies on semantic identifiers, `[aria-label="Reveal price"]`, `.price-block`, and computed style inspection.
+Playwright is more resource-intensive than direct HTTP requests, but it is necessary because the target site uses client-rendered content and browser interactions.
 
----
+### Strict Validation vs. Missing Data
 
-## 4. Data Correctness & Integrity
+The scraper prefers recording no price rather than storing a potentially incorrect price. A failed scrape is logged, but it does not create a bogus price-history entry.
 
-A central requirement of the assignment is that **no empty, zero, null, or fabricated data may ever enter price history**:
-- **Strict Validation**:
-  - Price must be parseable, finite, and strictly greater than 0.
-  - Formats with currency symbols (`₹`, `$`, `€`, `Rs.`), European decimals (`16.619,00`), fullwidth Unicode digits (`１６６１９`), and zero-width spaces are normalized to numeric integers.
-  - Stock is parsed into `In Stock` (with numeric quantity if available) or `Out of Stock`.
-- **Integrity Rule**: If extraction fails or an error occurs:
-  - **No record is inserted into `price_history`**.
-  - A comprehensive audit entry is created in `scrape_logs` recording the attempt number, duration, error type, and status (`RETRY` or `FAILED`).
-  - Existing historical records remain untainted.
+### External Scheduler vs. Internal Timer
+
+An external scheduler was chosen because the backend is deployed on Render's free tier, where the service can become inactive. cron-job.org provides a simple external trigger without requiring a continuously running scheduler process.
+
+### Asynchronous Cron Endpoint
+
+The scraper itself can take longer than a typical HTTP request timeout because of browser startup, retries, and backoff. Returning `202 Accepted` immediately allows the scheduled request to finish quickly while the scraper continues in the backend.
 
 ---
 
-## 5. Scheduling Strategy: External Cron vs. setInterval
+## 3. AI-Assisted Development: Initial Mistakes and Corrections
 
-The backend exposes a secure endpoint:
-`POST /api/scraper/run` protected by `CRON_SECRET`.
+AI coding tools were used during development, but several generated assumptions were incorrect and were identified through testing and deployment.
 
-**Why `cron-job.org` is used instead of `setInterval`**:
-- Render's free tier spins down web services after 15 minutes of inactivity.
-- Any in-process timer (`setInterval`) will freeze when the container sleeps.
-- An external scheduler like `cron-job.org` wakes the Render instance by issuing an HTTPS POST request every 2 hours, triggers the batch scraper, authenticates via `x-cron-secret`, and receives a completion summary.
+### Playwright Deployment
 
----
+The initial Render configuration used:
 
-## 6. Trade-offs & Simplicity
-
-- **Sequential Scrapes**: When running the scheduled cron job across multiple tracked products, products are scraped sequentially rather than in parallel. This trade-off prevents triggering upstream rate limits (`429 Too Many Requests`) on the target store.
-- **Repository Abstraction**: The database layer uses a Repository pattern with a Supabase client and an automatic local fallback store. This allows local evaluation and testing without requiring immediate cloud credentials, while remaining 100% compliant with Supabase PostgreSQL migrations in production.
-
----
-
-## 7. AI-Assisted Development: Encountered Issues & Corrections
-
-> [!NOTE]
-> This section documents the actual technical hurdles discovered and resolved during development:
-
-1. **AI Misconception on Cheerio**:
-   - *Initial AI Assumption*: Assumed the store could be scraped with simple HTTP `fetch` and Cheerio HTML parsing.
-   - *Target Reality*: The store is a client-side React SPA where prices require cursor hover movement and a WebAssembly cryptographic challenge. Cheerio saw only `<div id="root"></div>`.
-   - *Correction*: Adopted Playwright with headless automation and interaction emulation.
-2. **The Hidden Decoy Traps**:
-   - *Initial AI Assumption*: Assumed selecting `.price-value` or `[data-price="true"]` would yield the product price.
-   - *Target Reality*: The store intentionally rendered decoy elements with `display: none` containing fake prices (`d.d1` and `d.d2 = shown + 7`).
-   - *Correction*: Implemented computed style inspection to discard `display: none` elements and extract the true visible price element.
-3. **Cookie Overlay Click Interception**:
-   - *Initial AI Assumption*: Calling `btn.click()` on "Reveal price" would always succeed.
-   - *Target Reality*: A `<div class="cookie-overlay">` modal popped up 1.5–5 seconds after page load, intercepting pointer events and causing 30-second Playwright timeouts.
-   - *Correction*: Added an automated overlay detector and dismisser before and during interactive steps.
-4. **Node Process Hanging After Test Suite**:
-   - *Initial AI Assumption*: Calling `server.close()` would exit the test runner.
-   - *Target Reality*: Active HTTP keep-alive connections from global `fetch()` kept sockets open in the event loop.
-   - *Correction*: Added `server.closeAllConnections()` and explicit socket teardown in test lifecycle hooks.
+```bash
+npx playwright install --with-deps chromium
